@@ -8,6 +8,12 @@ __pycache__/
 .ruff_cache/
 .DS_Store
 
+# Node (Tailwind build)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # Virtual environments
 .venv/
 venv/

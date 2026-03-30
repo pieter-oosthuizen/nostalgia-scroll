@@ -1,0 +1,11 @@
+{
+  "name": "nostalgia-scroll",
+  "private": true,
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  },
+  "scripts": {
+    "build:css": "tailwindcss -i nostalgia_scroll/tailwind.input.css -o output/site/assets/tailwind.css --minify --content output/site/index.html"
+  }
+}
+

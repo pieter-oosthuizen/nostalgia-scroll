@@ -5,6 +5,7 @@ import json
 import mimetypes
 import re
 import shutil
+import subprocess
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -52,60 +53,20 @@ def _write_text(path: Path, content: str) -> None:
 
 
 def write_assets(site_dir: Path) -> None:
-    css = """
-:root{color-scheme:light dark;--bg:Canvas;--fg:CanvasText;--muted:color-mix(in oklab, CanvasText 55%, Canvas 45%);--stroke:color-mix(in oklab, CanvasText 22%, Canvas 78%);--panel:color-mix(in oklab, Canvas 88%, CanvasText 12%);--c0:#2b7;--c1:#48f;}
-html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
-a{color:inherit}
-.layout{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
-nav{position:sticky;top:0;height:100vh;overflow:auto;border-right:1px solid var(--stroke);background:var(--panel)}
-nav header{padding:12px 12px 10px;border-bottom:1px solid var(--stroke)}
-nav header strong{display:block;font-size:13px}
-nav header span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
-nav .section{padding:10px 12px}
-nav .year{margin:10px 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-nav ul{list-style:none;padding:0;margin:0}
-nav li{margin:2px 0}
-nav a{display:block;padding:7px 8px;border-radius:10px;text-decoration:none}
-nav a:hover{background:color-mix(in oklab, CanvasText 6%, Canvas 94%)}
-main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
-.topbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
-.topbar .title{display:flex;flex-direction:column;gap:2px}
-.topbar .title strong{font-size:14px}
-.topbar .title span{color:var(--muted);font-size:12px}
-.pill{border:1px solid var(--stroke);background:color-mix(in oklab, Canvas 92%, CanvasText 8%);border-radius:999px;padding:6px 10px;font-size:12px;text-decoration:none;white-space:nowrap}
-.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.settings label{font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center}
-.swatch{width:12px;height:12px;border-radius:4px;border:1px solid var(--stroke);background:var(--fg);display:inline-block}
-.settings select{border:1px solid var(--stroke);background:color-mix(in oklab, Canvas 92%, CanvasText 8%);color:var(--fg);border-radius:10px;padding:6px 8px}
-.timeline{display:flex;flex-direction:column;gap:18px}
-.month{scroll-margin-top:10px}
-.monthHeader{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:8px 0 10px}
-.monthHeader strong{font-size:13px}
-.monthHeader span{font-size:12px;color:var(--muted)}
-.messages{display:flex;flex-direction:column;gap:8px}
-.day{margin:14px 0 6px;padding-top:6px;border-top:1px dashed var(--stroke);color:var(--muted);font-size:12px}
-.row{display:flex;flex-direction:column;gap:2px;max-width:min(720px, 92%)}
-.row.left{align-self:flex-start}
-.row.right{align-self:flex-end}
-.ts{font-variant-numeric:tabular-nums;color:var(--muted);font-size:11px}
-.bubble{border:1px solid var(--stroke);border-radius:14px;padding:10px 12px;background:color-mix(in oklab, var(--c1) 16%, Canvas 84%)}
-.bubble.p0{background:color-mix(in oklab, var(--c0) 16%, Canvas 84%)}
-.bubble.p1{background:color-mix(in oklab, var(--c1) 16%, Canvas 84%)}
-.media{margin-top:8px;display:flex;flex-direction:column;gap:8px}
-.media img{max-width:300px;max-height:300px;width:auto;height:auto;object-fit:contain;border-radius:12px;border:1px solid var(--stroke);display:block;cursor:zoom-in}
-.media a{font-size:12px;color:var(--muted)}
-.overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.75);padding:24px;z-index:9999}
-.overlay.open{display:flex}
-.overlay img{max-width:min(95vw, 1200px);max-height:95vh;width:auto;height:auto;object-fit:contain;border-radius:14px;border:1px solid rgba(255,255,255,.18);box-shadow:0 18px 60px rgba(0,0,0,.45);cursor:zoom-out;background:color-mix(in oklab, Canvas 35%, black 65%)}
-.overlay .hint{position:absolute;bottom:14px;left:0;right:0;text-align:center;color:rgba(255,255,255,.85);font-size:12px}
-.meta{display:flex;gap:8px;align-items:baseline;margin-bottom:6px}
-.sender{font-weight:600;font-size:12px}
-.flags{color:var(--muted);font-size:12px}
-.text{white-space:pre-wrap;word-wrap:break-word;font-size:13px;line-height:1.35}
-.pager{display:flex;gap:10px;margin:16px 0 6px}
-@media (max-width:900px){.layout{grid-template-columns:1fr}nav{position:relative;height:auto;border-right:none;border-bottom:1px solid var(--stroke)}}
+    assets_dir = site_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    # Small CSS that complements Tailwind (participant bubble colors)
+    extra_css = """
+:root { --c0: #2b7; --c1: #48f; }
+.bubble-p0 { background-color: color-mix(in oklab, var(--c0) 16%, white 84%); }
+.bubble-p1 { background-color: color-mix(in oklab, var(--c1) 16%, white 84%); }
+@media (prefers-color-scheme: dark) {
+  .bubble-p0 { background-color: color-mix(in oklab, var(--c0) 22%, rgb(17 24 39) 78%); }
+  .bubble-p1 { background-color: color-mix(in oklab, var(--c1) 22%, rgb(17 24 39) 78%); }
+}
 """
-    _write_text(site_dir / "assets" / "style.css", css.strip() + "\n")
+    _write_text(assets_dir / "app.css", extra_css.strip() + "\n")
 
     js = r"""
 (function(){
@@ -211,37 +172,46 @@ def render_index(*, site_title: str, subtitle: str, meta: dict, nav_html: str, b
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{_escape(site_title)}</title>
-    <link rel="stylesheet" href="assets/style.css" />
+    <link rel="stylesheet" href="assets/tailwind.css" />
+    <link rel="stylesheet" href="assets/app.css" />
   </head>
-  <body>
-    <div class="layout">
-      <nav>
-        <header>
-          <strong>{_escape(site_title)}</strong>
-          <span id="subtitle">{_escape(subtitle)}</span>
+  <body class="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div class="min-h-screen grid grid-cols-1 md:grid-cols-[280px_1fr]">
+      <nav class="md:sticky md:top-0 md:h-screen overflow-auto border-b md:border-b-0 md:border-r border-slate-200/70 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-900/30 backdrop-blur">
+        <header class="px-3 py-3 border-b border-slate-200/70 dark:border-slate-800/70">
+          <div class="text-sm font-semibold">{_escape(site_title)}</div>
+          <div id="subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{_escape(subtitle)}</div>
         </header>
-        <div class="section">
-          <div class="settings">
-            <label><span class="swatch" id="swatch0"></span><span id="p0Name">P0</span><select id="color0"></select></label>
-            <label><span class="swatch" id="swatch1"></span><span id="p1Name">P1</span><select id="color1"></select></label>
+        <div class="px-3 py-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span id="swatch0" class="inline-block w-3 h-3 rounded border border-slate-300 dark:border-slate-700"></span>
+              <span id="p0Name">P0</span>
+              <select id="color0" class="text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/40 px-2 py-1"></select>
+            </label>
+            <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span id="swatch1" class="inline-block w-3 h-3 rounded border border-slate-300 dark:border-slate-700"></span>
+              <span id="p1Name">P1</span>
+              <select id="color1" class="text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/40 px-2 py-1"></select>
+            </label>
           </div>
         </div>
-        <div class="section">{nav_html}</div>
+        <div class="px-3 pb-5 text-sm">{nav_html}</div>
       </nav>
-      <main>
-        <div class="topbar">
-          <div class="title">
-            <strong>Chat timeline</strong>
-            <span>Use the month list to jump.</span>
+      <main class="px-4 py-4 md:px-6 md:py-6 max-w-5xl mx-auto w-full">
+        <div class="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <div class="text-sm font-semibold">Chat timeline</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Use the month list to jump.</div>
           </div>
         </div>
-        <div class="timeline">{body_html}</div>
+        <div class="flex flex-col gap-6">{body_html}</div>
       </main>
     </div>
 
-    <div class="overlay" id="overlay" aria-hidden="true">
-      <img id="overlayImg" alt="" />
-      <div class="hint">Click to close • Esc</div>
+    <div id="overlay" class="fixed inset-0 hidden items-center justify-center bg-black/80 p-6 z-50">
+      <img id="overlayImg" alt="" class="max-w-[min(95vw,1200px)] max-h-[95vh] rounded-xl border border-white/15 shadow-2xl cursor-zoom-out bg-slate-900" />
+      <div class="absolute bottom-3 left-0 right-0 text-center text-xs text-white/80">Click to close • Esc</div>
     </div>
 
     <script id="meta" type="application/json">{_escape(meta_json)}</script>
@@ -348,9 +318,11 @@ def build_site(
         by_year.setdefault(mk.year, []).append(mk)
     nav_parts: list[str] = []
     for y, mks in by_year.items():
-        nav_parts.append(f'<div class="year">{y}</div><ul>')
+        nav_parts.append(f'<div class="mt-4 mb-1 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">{y}</div><ul class="space-y-1">')
         for mk in mks:
-            nav_parts.append(f'<li><a href="#m-{mk.ym.replace("-", "")}">{mk.label}</a></li>')
+            nav_parts.append(
+                f'<li><a class="block rounded-lg px-2 py-1 hover:bg-slate-200/60 dark:hover:bg-slate-800/50" href="#m-{mk.ym.replace("-", "")}">{mk.label}</a></li>'
+            )
         nav_parts.append("</ul>")
     nav_html = "\n".join(nav_parts)
 
@@ -358,18 +330,18 @@ def build_site(
     for mk in month_keys:
         month_id = f"m-{mk.ym.replace('-', '')}"
         month_msgs = buckets[mk]
-        body_parts.append(f'<section class="month" id="{month_id}">')
+        body_parts.append(f'<section class="scroll-mt-3" id="{month_id}">')
         body_parts.append(
-            f'<div class="monthHeader"><strong>{_escape(mk.label)}</strong><span>{len(month_msgs):,} messages</span></div>'
+            f'<div class="flex items-baseline justify-between gap-3 mb-3"><div class="text-sm font-semibold">{_escape(mk.label)}</div><div class="text-xs text-slate-500 dark:text-slate-400">{len(month_msgs):,} messages</div></div>'
         )
-        body_parts.append('<div class="messages">')
+        body_parts.append('<div class="flex flex-col gap-2">')
 
         current_day: str | None = None
         for m in month_msgs:
             dt = _dt_local(m.ts_ms)
             day = dt.strftime("%Y-%m-%d (%a)")
             if day != current_day:
-                body_parts.append(f'<div class="day">{_escape(day)}</div>')
+                body_parts.append(f'<div class="mt-4 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">{_escape(day)}</div>')
                 current_day = day
 
             sender = m.sender or ("System" if m.system else "Unknown")
@@ -379,7 +351,7 @@ def build_site(
             elif participants and sender != participants[0]:
                 p = 1
             row_class = "row left" if p == 0 else "row right"
-            bubble_class = "bubble p0" if p == 0 else "bubble p1"
+            bubble_class = "bubble-p0" if p == 0 else "bubble-p1"
             ts = dt.strftime("%H:%M")
 
             cleaned, att_names = extract_attachments(m.text)
@@ -389,17 +361,26 @@ def build_site(
                 kind = classify(nm)
                 if kind == "image" and rel:
                     media_bits.append(
-                        f'<img data-fullscreen="1" src="{_escape(rel)}" alt="{_escape(nm)}" loading="lazy" />'
+                        f'<img class="mt-2 max-w-[300px] max-h-[300px] w-auto h-auto object-contain rounded-xl border border-slate-200 dark:border-slate-800 cursor-zoom-in" data-fullscreen="1" src="{_escape(rel)}" alt="{_escape(nm)}" loading="lazy" />'
                     )
                 elif rel:
-                    media_bits.append(f'<a href="{_escape(rel)}" target="_blank" rel="noreferrer">{_escape(nm)}</a>')
+                    media_bits.append(
+                        f'<a class="mt-2 text-xs text-slate-500 dark:text-slate-400 underline" href="{_escape(rel)}" target="_blank" rel="noreferrer">{_escape(nm)}</a>'
+                    )
                 else:
-                    media_bits.append(f'<span style="color:var(--muted);font-size:12px">{_escape(nm)}</span>')
+                    media_bits.append(
+                        f'<div class="mt-2 text-xs text-slate-500 dark:text-slate-400">{_escape(nm)}</div>'
+                    )
 
-            media_html = f'<div class="media">{"".join(media_bits)}</div>' if media_bits else ""
+            media_html = f'{"".join(media_bits)}' if media_bits else ""
 
             body_parts.append(
-                f'<div class="{row_class}"><div class="ts">{_escape(ts)} • {_escape(sender)}</div><div class="{bubble_class}"><div class="text">{_escape(cleaned)}</div>{media_html}</div></div>'
+                f'<div class="flex flex-col gap-1 max-w-[min(720px,92%)] {"self-start" if p == 0 else "self-end"}">'
+                f'<div class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{_escape(ts)} • {_escape(sender)}</div>'
+                f'<div class="rounded-2xl border border-slate-200 dark:border-slate-800 px-3 py-2 {bubble_class}">'
+                f'<div class="whitespace-pre-wrap break-words text-[13px] leading-snug">{_escape(cleaned)}</div>'
+                f'{media_html}'
+                f"</div></div>"
             )
 
         body_parts.append("</div></section>")
@@ -408,5 +389,36 @@ def build_site(
 
     index_html = render_index(site_title=title, subtitle=subtitle, meta=meta, nav_html=nav_html, body_html=body_html)
     _write_text(site_dir / "index.html", index_html)
+
+    # Build Tailwind CSS (compiled, offline, fast)
+    input_css = Path(__file__).with_name("tailwind.input.css")
+    out_css = site_dir / "assets" / "tailwind.css"
+    index_path = site_dir / "index.html"
+    try:
+        subprocess.run(
+            [
+                "npx",
+                "tailwindcss",
+                "-i",
+                str(input_css),
+                "-o",
+                str(out_css),
+                "--minify",
+                "--content",
+                str(index_path),
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "Tailwind build requires Node.js + npm (for `npx tailwindcss`). "
+            "Install Node, then run `npm install` in this repo."
+        ) from e
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Tailwind build failed:\n{e.stdout}") from e
+
     return site_dir / "index.html"
 

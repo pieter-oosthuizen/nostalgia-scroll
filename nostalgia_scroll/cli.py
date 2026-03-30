@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
 
     source_dir: Path = args.source_dir
     output_dir: Path = Path("output")
+    print(f"[NostalgiaScroll] Cleaning {output_dir}/")
     if output_dir.exists():
         if output_dir.is_dir():
             shutil.rmtree(output_dir)
@@ -54,18 +55,24 @@ def main(argv: list[str] | None = None) -> int:
     media_zip_path: Path | None = None
     if args.zip is not None:
         media_zip_path = args.zip
+        print(f"[NostalgiaScroll] Reading ZIP {args.zip}")
         zsrc: ZipChatSource = parse_ios_export_zip(args.zip)
     else:
         if source_dir.exists() and (source_dir / "_chat.txt").exists():
+            print(f"[NostalgiaScroll] Reading extracted export {source_dir}/")
             zsrc = parse_ios_export_dir(source_dir)
         elif source_dir.exists() and any(source_dir.glob("*.txt")):
+            print(f"[NostalgiaScroll] Reading extracted export {source_dir}/")
             zsrc = parse_ios_export_dir(source_dir)
         else:
             zip_path = discover_ios_export_zip(source_dir)
             media_zip_path = zip_path
+            print(f"[NostalgiaScroll] Auto-selected ZIP {zip_path}")
             zsrc = parse_ios_export_zip(zip_path)
 
     messages = [m for m in zsrc.messages if (args.include_system or not m.system)]
+    print(f"[NostalgiaScroll] Parsed {len(messages):,} messages")
+    print("[NostalgiaScroll] Building site (HTML, media copy, Tailwind CSS)…")
     entry = build_site(
         output_dir=output_dir,
         messages=messages,
@@ -74,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         media_source_dir=source_dir if source_dir.exists() and source_dir.is_dir() else None,
         media_zip_path=media_zip_path,
     )
-    print(f"Wrote {entry}")
+    print(f"[NostalgiaScroll] Wrote {entry}")
     return 0
 
 

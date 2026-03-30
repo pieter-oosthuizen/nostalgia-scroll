@@ -8,11 +8,22 @@ Generate an offline, scrollable website from a WhatsApp **iOS export** (ZIP or e
 - **No warranties.** The author(s) of this tool take **no responsibility or liability** for privacy leaks, accidental publication, or any resulting harm.
 - **Do not commit exports or output.** Make sure you never commit `Source/` or `output/` to git (this repo includes a `.gitignore` for that).
 
+## Prerequisites
+
+- **Python**: 3.10+
+- **Node.js + npm**: required to compile Tailwind CSS during generation (`npm install` once, then the generator uses `npx tailwindcss`).
+
 ## Quick start
 
 1) Put your export zip into `Source/` (example: `Source/WhatsApp Chat with Alice.zip`).
 
-2) (Optional) Create a virtual environment and install requirements:
+2) Install build tooling (Tailwind CSS compiler):
+
+```bash
+npm install
+```
+
+3) (Optional) Create a virtual environment and install requirements:
 
 ```bash
 python3 -m venv .venv
@@ -21,13 +32,13 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-3) Run:
+4) Run:
 
 ```bash
 python -m nostalgia_scroll
 ```
 
-4) Open:
+5) Open:
 - `output/site/index.html`
 
 ## Exporting a chat from WhatsApp (iOS)
