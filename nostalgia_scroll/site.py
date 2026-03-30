@@ -61,6 +61,8 @@ def write_assets(site_dir: Path) -> None:
 :root { --c0: #2b7; --c1: #48f; }
 .bubble-p0 { background-color: color-mix(in oklab, var(--c0) 16%, white 84%); }
 .bubble-p1 { background-color: color-mix(in oklab, var(--c1) 16%, white 84%); }
+.msg-row[data-side="left"] { align-self: flex-start; }
+.msg-row[data-side="right"] { align-self: flex-end; }
 @media (prefers-color-scheme: dark) {
   .bubble-p0 { background-color: color-mix(in oklab, var(--c0) 22%, rgb(17 24 39) 78%); }
   .bubble-p1 { background-color: color-mix(in oklab, var(--c1) 22%, rgb(17 24 39) 78%); }
@@ -77,6 +79,7 @@ def write_assets(site_dir: Path) -> None:
   const swC1 = document.getElementById("swatch1");
   const elP0 = document.getElementById("p0Name");
   const elP1 = document.getElementById("p1Name");
+  const btnSwitchSides = document.getElementById("switchSides");
   const elOverlay = document.getElementById("overlay");
   const elOverlayImg = document.getElementById("overlayImg");
 
@@ -86,6 +89,8 @@ def write_assets(site_dir: Path) -> None:
   ];
 
   function setVar(name, value){ document.documentElement.style.setProperty(name, value); }
+  function loadSwapSides(){ return localStorage.getItem("wa_swap_sides") === "1"; }
+  function saveSwapSides(v){ localStorage.setItem("wa_swap_sides", v ? "1" : "0"); }
   function loadPrefs(){
     const a = localStorage.getItem("wa_color0");
     const b = localStorage.getItem("wa_color1");
@@ -116,6 +121,15 @@ def write_assets(site_dir: Path) -> None:
     setTimeout(() => { elOverlayImg.src = ""; }, 0);
   }
 
+  function applySides(swapped){
+    document.querySelectorAll(".msg-row[data-p]").forEach((el) => {
+      const pRaw = el.getAttribute("data-p");
+      const p = pRaw === "1" ? 1 : 0;
+      const sideP = swapped ? (p === 0 ? 1 : 0) : p;
+      el.setAttribute("data-side", sideP === 0 ? "left" : "right");
+    });
+  }
+
   function boot(){
     const metaRaw = (document.getElementById("meta")?.textContent || "").trim();
     const meta = metaRaw ? JSON.parse(metaRaw) : null;
@@ -132,6 +146,16 @@ def write_assets(site_dir: Path) -> None:
     setVar("--c1", prefs.c1);
     if (swC0) swC0.style.background = prefs.c0;
     if (swC1) swC1.style.background = prefs.c1;
+
+    let swapped = loadSwapSides();
+    applySides(swapped);
+    if (btnSwitchSides){
+      btnSwitchSides.addEventListener("click", () => {
+        swapped = !swapped;
+        saveSwapSides(swapped);
+        applySides(swapped);
+      });
+    }
 
     function onColorChange(){
       const c0 = selC0.value;
@@ -183,6 +207,10 @@ def render_index(*, site_title: str, subtitle: str, meta: dict, nav_html: str, b
           <div id="subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{_escape(subtitle)}</div>
         </header>
         <div class="px-3 py-3">
+          <button id="switchSides" type="button" class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/40 px-3 py-2 text-xs font-medium hover:bg-white dark:hover:bg-slate-950/60">
+            Switch User Sides
+          </button>
+          <div class="h-2"></div>
           <div class="flex flex-wrap items-center gap-2">
             <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               <span id="swatch0" class="inline-block w-3 h-3 rounded border border-slate-300 dark:border-slate-700"></span>
@@ -375,7 +403,7 @@ def build_site(
             media_html = f'{"".join(media_bits)}' if media_bits else ""
 
             body_parts.append(
-                f'<div class="flex flex-col gap-1 max-w-[min(720px,92%)] {"self-start" if p == 0 else "self-end"}">'
+                f'<div class="msg-row flex flex-col gap-1 max-w-[min(720px,92%)]" data-p="{p}" data-side="{"left" if p == 0 else "right"}">'
                 f'<div class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{_escape(ts)} • {_escape(sender)}</div>'
                 f'<div class="rounded-2xl border border-slate-200 dark:border-slate-800 px-3 py-2 {bubble_class}">'
                 f'<div class="whitespace-pre-wrap break-words text-[13px] leading-snug">{_escape(cleaned)}</div>'

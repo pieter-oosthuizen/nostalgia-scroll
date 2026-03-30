@@ -72,7 +72,7 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
 .topbar .title{display:flex;flex-direction:column;gap:2px}
 .topbar .title strong{font-size:14px}
 .topbar .title span{color:var(--muted);font-size:12px}
-.pill{border:1px solid var(--stroke);background:color-mix(in oklab, Canvas 92%, CanvasText 8%);border-radius:999px;padding:6px 10px;font-size:12px;text-decoration:none;white-space:nowrap}
+.pill{border:1px solid var(--stroke);background:color-mix(in oklab, Canvas 92%, CanvasText 8%);border-radius:999px;padding:6px 10px;font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}
 .settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .settings label{font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center}
 .swatch{width:12px;height:12px;border-radius:4px;border:1px solid var(--stroke);background:var(--fg);display:inline-block}
@@ -114,7 +114,8 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
     loaded: new Set(),
     loading: new Set(),
     monthOrder: [],
-    nextIdx: 0
+    nextIdx: 0,
+    swapped: false
   };
 
   const elSubtitle = document.getElementById("subtitle");
@@ -127,6 +128,7 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
   const swC1 = document.getElementById("swatch1");
   const elP0 = document.getElementById("p0Name");
   const elP1 = document.getElementById("p1Name");
+  const btnSwitchSides = document.getElementById("switchSides");
   const elOverlay = document.getElementById("overlay");
   const elOverlayImg = document.getElementById("overlayImg");
 
@@ -136,6 +138,8 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
   ];
 
   function setVar(name, value){ document.documentElement.style.setProperty(name, value); }
+  function loadSwapSides(){ return localStorage.getItem("wa_swap_sides") === "1"; }
+  function saveSwapSides(v){ localStorage.setItem("wa_swap_sides", v ? "1" : "0"); }
 
   function loadPrefs(){
     const a = localStorage.getItem("wa_color0");
@@ -257,7 +261,8 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
       }
 
       const row = document.createElement("div");
-      row.className = "row " + (msg.p === 0 ? "left" : "right");
+      const sideP = state.swapped ? (msg.p === 0 ? 1 : 0) : msg.p;
+      row.className = "row " + (sideP === 0 ? "left" : "right");
 
       const ts = document.createElement("div");
       ts.className = "ts";
@@ -369,6 +374,24 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
     if (swC0) swC0.style.background = prefs.c0;
     if (swC1) swC1.style.background = prefs.c1;
 
+    state.swapped = loadSwapSides();
+    if (btnSwitchSides){
+      btnSwitchSides.addEventListener("click", () => {
+        state.swapped = !state.swapped;
+        saveSwapSides(state.swapped);
+        // Apply to already-rendered months
+        document.querySelectorAll(".row").forEach((row) => {
+          const bubble = row.querySelector(".bubble");
+          if (!bubble) return;
+          const isP0 = bubble.classList.contains("p0");
+          const p = isP0 ? 0 : 1;
+          const sideP = state.swapped ? (p === 0 ? 1 : 0) : p;
+          row.classList.toggle("left", sideP === 0);
+          row.classList.toggle("right", sideP === 1);
+        });
+      });
+    }
+
     function onColorChange(){
       const c0 = selC0.value;
       const c1 = selC1.value;
@@ -417,6 +440,7 @@ def render_index(*, site_title: str, subtitle: str, meta: dict) -> str:
           <span id="subtitle">{_escape(subtitle)}</span>
         </header>
         <div class="section">
+          <button id="switchSides" type="button" class="pill" style="width:100%;text-align:center;margin-bottom:10px">Switch User Sides</button>
           <div class="settings">
             <label><span class="swatch" id="swatch0"></span><span id="p0Name">P0</span><select id="color0"></select></label>
             <label><span class="swatch" id="swatch1"></span><span id="p1Name">P1</span><select id="color1"></select></label>
