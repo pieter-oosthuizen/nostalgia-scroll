@@ -21,15 +21,32 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-3) Run (pick one):
+3) Run:
 
 ```bash
-# Run the package module
 python -m nostalgia_scroll
 ```
 
 4) Open:
 - `output/site/index.html`
+
+## Exporting a chat from WhatsApp (iOS)
+
+1) Open **WhatsApp** on your iPhone.
+
+2) Open the chat you want to export (1:1 chats work best).
+
+3) Tap the contact/group name at the top to open **Chat Info**.
+
+4) Scroll down and tap **Export Chat**.
+
+5) Choose **Attach Media** (recommended if you want images to show up).
+
+6) Share/save the export:
+- **Save to Files** → pick a folder you can access on your Mac (iCloud Drive works well), or
+- AirDrop it to your Mac.
+
+7) On your Mac, place the resulting **ZIP** into the tool’s `Source/` folder (or extract it and point `--source-dir` at the extracted folder containing `_chat.txt`).
 
 ## Options
 
