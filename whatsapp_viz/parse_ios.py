@@ -67,29 +67,77 @@ def _local_tz() -> ZoneInfo:
 
 
 def _parse_ts(date_s: str, time_s: str, sec_s: str | None, ampm: str | None, tz: ZoneInfo) -> datetime:
-    # WhatsApp iOS exports vary; support both 12h w/ AM/PM and 24h without.
-    # Date can be D/M/YY or M/D/YY depending on locale; we can't know reliably.
-    # We'll assume M/D/YY first, then D/M/YY fallback.
+    raise RuntimeError("_parse_ts() should not be called directly; use _parse_ts_with_order().")
+
+
+def _parse_ts_with_order(
+    date_s: str,
+    time_s: str,
+    sec_s: str | None,
+    ampm: str | None,
+    tz: ZoneInfo,
+    *,
+    date_order: str,
+) -> datetime:
     sec = sec_s or "00"
     year_token = date_s.split("/")[-1]
     yfmt = "%Y" if len(year_token) == 4 else "%y"
+
+    if date_order not in {"dmy", "mdy"}:
+        raise ValueError(f"Unsupported date_order: {date_order}")
+
+    md_fmt = f"%m/%d/{yfmt}"
+    dm_fmt = f"%d/%m/{yfmt}"
+    date_fmt = dm_fmt if date_order == "dmy" else md_fmt
+    fallback_fmt = md_fmt if date_order == "dmy" else dm_fmt
+
     if ampm:
-        fmt = f"%m/%d/{yfmt} %I:%M:%S %p"
         s = f"{date_s} {time_s}:{sec} {ampm}"
         try:
-            dt = datetime.strptime(s, fmt)
+            dt = datetime.strptime(s, f"{date_fmt} %I:%M:%S %p")
         except ValueError:
-            fmt2 = f"%d/%m/{yfmt} %I:%M:%S %p"
-            dt = datetime.strptime(s, fmt2)
+            dt = datetime.strptime(s, f"{fallback_fmt} %I:%M:%S %p")
     else:
-        fmt = f"%m/%d/{yfmt} %H:%M:%S"
         s = f"{date_s} {time_s}:{sec}"
         try:
-            dt = datetime.strptime(s, fmt)
+            dt = datetime.strptime(s, f"{date_fmt} %H:%M:%S")
         except ValueError:
-            fmt2 = f"%d/%m/{yfmt} %H:%M:%S"
-            dt = datetime.strptime(s, fmt2)
+            dt = datetime.strptime(s, f"{fallback_fmt} %H:%M:%S")
+
     return dt.replace(tzinfo=tz)
+
+
+def _infer_date_order(lines: list[str], *, sample_size: int = 500) -> str:
+    dmy = 0
+    mdy = 0
+    seen = 0
+    for raw in lines:
+        m = _IOS_LINE_RE.match(raw)
+        if not m:
+            continue
+        date_s = m.group("br_date") or m.group("date")
+        if not date_s:
+            continue
+        parts = date_s.split("/")
+        if len(parts) != 3:
+            continue
+        try:
+            a = int(parts[0])
+            b = int(parts[1])
+        except ValueError:
+            continue
+
+        if a > 12 and b <= 12:
+            dmy += 1
+        elif b > 12 and a <= 12:
+            mdy += 1
+        seen += 1
+        if seen >= sample_size:
+            break
+
+    if dmy == 0 and mdy == 0:
+        return "dmy"
+    return "dmy" if dmy >= mdy else "mdy"
 
 
 def parse_ios_chat_text(chat_text: str) -> list[Message]:
@@ -115,6 +163,7 @@ def parse_ios_chat_text(chat_text: str) -> list[Message]:
         current = None
 
     lines = chat_text.splitlines()
+    date_order = _infer_date_order(lines)
     msg_id = 0
     for raw in lines:
         m = _IOS_LINE_RE.match(raw)
@@ -131,7 +180,7 @@ def parse_ios_chat_text(chat_text: str) -> list[Message]:
         ampm = m.group("ampm")
         body = m.group("body") or ""
 
-        dt = _parse_ts(date_s, time_s, sec_s, ampm, tz=tz)
+        dt = _parse_ts_with_order(date_s, time_s, sec_s, ampm, tz=tz, date_order=date_order)
         ts_ms = int(dt.timestamp() * 1000)
         ts_iso = dt.isoformat()
 

@@ -108,12 +108,7 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
 
     js = r"""
 (function(){
-  const state = { meta: null, loaded: new Set(), loading: new Set(), monthOrder: [], nextIdx: 0 };
-
   const elSubtitle = document.getElementById("subtitle");
-  const elNav = document.getElementById("navMonths");
-  const elTimeline = document.getElementById("timeline");
-  const elSentinel = document.getElementById("sentinel");
   const selC0 = document.getElementById("color0");
   const selC1 = document.getElementById("color1");
   const swC0 = document.getElementById("swatch0");
@@ -147,66 +142,6 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
     sel.value = initial;
   }
 
-  function renderNav(meta){
-    const months = meta.months;
-    const byYear = new Map();
-    for (const ym of months){
-      const y = ym.slice(0,4);
-      if (!byYear.has(y)) byYear.set(y, []);
-      byYear.get(y).push(ym);
-    }
-    elNav.innerHTML = "";
-    for (const [y, list] of byYear.entries()){
-      const yDiv = document.createElement("div");
-      yDiv.className = "year";
-      yDiv.textContent = y;
-      elNav.appendChild(yDiv);
-      const ul = document.createElement("ul");
-      for (const ym of list){
-        const li = document.createElement("li");
-        const a = document.createElement("a");
-        a.href = "#m-" + ym.replace("-","");
-        a.textContent = ym;
-        a.addEventListener("click", async (e) => {
-          e.preventDefault();
-          await ensureMonthLoaded(ym);
-          const el = document.getElementById("m-" + ym.replace("-",""));
-          if (el) el.scrollIntoView({behavior:"smooth", block:"start"});
-        });
-        li.appendChild(a);
-        ul.appendChild(li);
-      }
-      elNav.appendChild(ul);
-    }
-  }
-
-  function monthScriptSrc(ym){ return "months/" + ym + ".js"; }
-  function loadMonthScript(ym){
-    return new Promise((resolve, reject) => {
-      if (state.loaded.has(ym)) return resolve();
-      if (state.loading.has(ym)) return resolve();
-      state.loading.add(ym);
-      const s = document.createElement("script");
-      s.src = monthScriptSrc(ym);
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error("Failed to load " + s.src));
-      document.head.appendChild(s);
-    });
-  }
-
-  function fmtDay(ts){
-    const d = new Date(ts);
-    const y = d.getFullYear();
-    const m = String(d.getMonth()+1).padStart(2,"0");
-    const dd = String(d.getDate()).padStart(2,"0");
-    const wk = d.toLocaleDateString(undefined, { weekday: "short" });
-    return `${y}-${m}-${dd} (${wk})`;
-  }
-  function fmtTime(ts){
-    const d = new Date(ts);
-    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  }
-
   function openOverlay(src, alt){
     if (!elOverlay || !elOverlayImg) return;
     elOverlayImg.src = src;
@@ -219,122 +154,14 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
     setTimeout(() => { elOverlayImg.src = ""; }, 0);
   }
 
-  function renderMonth(ym, payload){
-    if (state.loaded.has(ym)) return;
-    state.loaded.add(ym);
-    state.loading.delete(ym);
-
-    const monthId = "m-" + ym.replace("-","");
-    const monthEl = document.createElement("section");
-    monthEl.className = "month";
-    monthEl.id = monthId;
-
-    const header = document.createElement("div");
-    header.className = "monthHeader";
-    const strong = document.createElement("strong");
-    strong.textContent = ym;
-    const span = document.createElement("span");
-    span.textContent = `${payload.messages.length.toLocaleString()} messages`;
-    header.appendChild(strong);
-    header.appendChild(span);
-    monthEl.appendChild(header);
-
-    const msgsEl = document.createElement("div");
-    msgsEl.className = "messages";
-
-    let currentDay = null;
-    for (const msg of payload.messages){
-      const day = fmtDay(msg.ts);
-      if (day !== currentDay){
-        const dayEl = document.createElement("div");
-        dayEl.className = "day";
-        dayEl.textContent = day;
-        msgsEl.appendChild(dayEl);
-        currentDay = day;
-      }
-
-      const row = document.createElement("div");
-      row.className = "row " + (msg.p === 0 ? "left" : "right");
-
-      const ts = document.createElement("div");
-      ts.className = "ts";
-      ts.textContent = `${fmtTime(msg.ts)} • ${msg.sender}`;
-      row.appendChild(ts);
-
-      const bubble = document.createElement("div");
-      bubble.className = "bubble " + (msg.p === 0 ? "p0" : "p1");
-
-      const text = document.createElement("div");
-      text.className = "text";
-      text.textContent = msg.text;
-      bubble.appendChild(text);
-
-      if (msg.media && msg.media.length){
-        const mediaWrap = document.createElement("div");
-        mediaWrap.className = "media";
-        for (const it of msg.media){
-          if (it.kind === "image"){
-            const img = document.createElement("img");
-            img.src = it.src;
-            img.loading = "lazy";
-            img.alt = it.name || "image";
-            img.addEventListener("click", (e) => { e.preventDefault(); openOverlay(img.src, img.alt); });
-            mediaWrap.appendChild(img);
-          } else {
-            const a = document.createElement("a");
-            a.href = it.src;
-            a.textContent = it.name || it.src;
-            a.target = "_blank";
-            a.rel = "noreferrer";
-            mediaWrap.appendChild(a);
-          }
-        }
-        bubble.appendChild(mediaWrap);
-      }
-
-      row.appendChild(bubble);
-      msgsEl.appendChild(row);
-    }
-
-    monthEl.appendChild(msgsEl);
-    elTimeline.appendChild(monthEl);
-  }
-
-  async function ensureMonthLoaded(ym){
-    if (state.loaded.has(ym)) return;
-    await loadMonthScript(ym);
-  }
-  async function loadNext(){
-    if (state.nextIdx >= state.monthOrder.length) return;
-    const ym = state.monthOrder[state.nextIdx];
-    state.nextIdx += 1;
-    await ensureMonthLoaded(ym);
-  }
-  function setupInfiniteScroll(){
-    const io = new IntersectionObserver(async (entries) => {
-      for (const e of entries){
-        if (e.isIntersecting){
-          await loadNext();
-          await loadNext();
-        }
-      }
-    }, { root: null, threshold: 0.1 });
-    io.observe(elSentinel);
-  }
-
-  window.__waMonthLoaded = (ym, payload) => { renderMonth(ym, payload); };
-
   function boot(){
     const metaRaw = (document.getElementById("meta")?.textContent || "").trim();
-    state.meta = metaRaw ? JSON.parse(metaRaw) : null;
-    if (!state.meta) return;
+    const meta = metaRaw ? JSON.parse(metaRaw) : null;
+    if (!meta) return;
 
-    elSubtitle.textContent = `${state.meta.total_messages.toLocaleString()} messages • ${state.meta.months.length} months`;
-    elP0.textContent = state.meta.participants[0] || "Participant 1";
-    elP1.textContent = state.meta.participants[1] || "Participant 2";
-
-    renderNav(state.meta);
-    state.monthOrder = state.meta.months;
+    elSubtitle.textContent = `${meta.total_messages.toLocaleString()} messages • ${meta.months.length} months`;
+    elP0.textContent = meta.participants[0] || "Participant 1";
+    elP1.textContent = meta.participants[1] || "Participant 2";
 
     const prefs = loadPrefs();
     populateColorSelect(selC0, prefs.c0);
@@ -356,12 +183,16 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
     selC0.addEventListener("change", onColorChange);
     selC1.addEventListener("change", onColorChange);
 
-    loadNext().then(() => loadNext());
-    setupInfiniteScroll();
-
     if (elOverlay) elOverlay.addEventListener("click", closeOverlay);
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && elOverlay && elOverlay.classList.contains("open")) closeOverlay();
+    });
+
+    document.querySelectorAll("img[data-fullscreen='1']").forEach((img) => {
+      img.addEventListener("click", (e) => {
+        e.preventDefault();
+        openOverlay(img.getAttribute("src"), img.getAttribute("alt") || "image");
+      });
     });
   }
 
@@ -371,7 +202,7 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
     _write_text(site_dir / "assets" / "app.js", js.strip() + "\n")
 
 
-def render_index(*, site_title: str, subtitle: str, meta: dict) -> str:
+def render_index(*, site_title: str, subtitle: str, meta: dict, nav_html: str, body_html: str) -> str:
     meta_json = json.dumps(meta, ensure_ascii=False)
     body = f"""<!doctype html>
 <html lang="en">
@@ -394,17 +225,16 @@ def render_index(*, site_title: str, subtitle: str, meta: dict) -> str:
             <label><span class="swatch" id="swatch1"></span><span id="p1Name">P1</span><select id="color1"></select></label>
           </div>
         </div>
-        <div class="section" id="navMonths"></div>
+        <div class="section">{nav_html}</div>
       </nav>
       <main>
         <div class="topbar">
           <div class="title">
             <strong>Chat timeline</strong>
-            <span>Scroll to load more. Use the month list to jump.</span>
+            <span>Use the month list to jump.</span>
           </div>
         </div>
-        <div class="timeline" id="timeline"></div>
-        <div id="sentinel" style="height: 1px;"></div>
+        <div class="timeline">{body_html}</div>
       </main>
     </div>
 
@@ -436,7 +266,7 @@ def build_site(
     month_keys = list(buckets.keys())
     if not month_keys:
         meta = {"participants": [], "months": [], "total_messages": 0}
-        index_html = render_index(site_title=title, subtitle=subtitle, meta=meta)
+        index_html = render_index(site_title=title, subtitle=subtitle, meta=meta, nav_html="", body_html="")
         _write_text(site_dir / "index.html", index_html)
         return site_dir / "index.html"
 
@@ -490,34 +320,71 @@ def build_site(
             shutil.copyfile(src, dst)
         return f"media/{name}"
 
-    months_dir = site_dir / "months"
-    months_dir.mkdir(parents=True, exist_ok=True)
+    # Build nav + full HTML body
+    by_year: dict[int, list[MonthKey]] = {}
     for mk in month_keys:
-        out_msgs = []
-        for m in buckets[mk]:
+        by_year.setdefault(mk.year, []).append(mk)
+    nav_parts: list[str] = []
+    for y, mks in by_year.items():
+        nav_parts.append(f'<div class="year">{y}</div><ul>')
+        for mk in mks:
+            nav_parts.append(f'<li><a href="#m-{mk.ym.replace("-", "")}">{mk.label}</a></li>')
+        nav_parts.append("</ul>")
+    nav_html = "\n".join(nav_parts)
+
+    body_parts: list[str] = []
+    for mk in month_keys:
+        month_id = f"m-{mk.ym.replace('-', '')}"
+        month_msgs = buckets[mk]
+        body_parts.append(f'<section class="month" id="{month_id}">')
+        body_parts.append(
+            f'<div class="monthHeader"><strong>{_escape(mk.label)}</strong><span>{len(month_msgs):,} messages</span></div>'
+        )
+        body_parts.append('<div class="messages">')
+
+        current_day: str | None = None
+        for m in month_msgs:
+            dt = _dt_local(m.ts_ms)
+            day = dt.strftime("%Y-%m-%d (%a)")
+            if day != current_day:
+                body_parts.append(f'<div class="day">{_escape(day)}</div>')
+                current_day = day
+
             sender = m.sender or ("System" if m.system else "Unknown")
             p = 0
             if participants and sender == participants[1]:
                 p = 1
             elif participants and sender != participants[0]:
                 p = 1
+            row_class = "row left" if p == 0 else "row right"
+            bubble_class = "bubble p0" if p == 0 else "bubble p1"
+            ts = dt.strftime("%H:%M")
 
             cleaned, att_names = extract_attachments(m.text)
-            media_items = []
+            media_bits: list[str] = []
             for nm in att_names:
                 rel = copy_media(nm)
-                if rel:
-                    media_items.append({"kind": classify(nm), "src": rel, "name": nm})
+                kind = classify(nm)
+                if kind == "image" and rel:
+                    media_bits.append(
+                        f'<img data-fullscreen="1" src="{_escape(rel)}" alt="{_escape(nm)}" loading="lazy" />'
+                    )
+                elif rel:
+                    media_bits.append(f'<a href="{_escape(rel)}" target="_blank" rel="noreferrer">{_escape(nm)}</a>')
                 else:
-                    media_items.append({"kind": classify(nm), "src": nm, "name": nm})
+                    media_bits.append(f'<span style="color:var(--muted);font-size:12px">{_escape(nm)}</span>')
 
-            out_msgs.append({"ts": m.ts_ms, "sender": sender, "text": cleaned, "p": p, "media": media_items})
+            media_html = f'<div class="media">{"".join(media_bits)}</div>' if media_bits else ""
 
-        payload = {"messages": out_msgs}
-        js = f"window.__waMonthLoaded && window.__waMonthLoaded({json.dumps(mk.ym)}, {json.dumps(payload, ensure_ascii=False)});"
-        _write_text(months_dir / f"{mk.ym}.js", js + "\n")
+            body_parts.append(
+                f'<div class="{row_class}"><div class="ts">{_escape(ts)} • {_escape(sender)}</div><div class="{bubble_class}"><div class="text">{_escape(cleaned)}</div>{media_html}</div></div>'
+            )
 
-    index_html = render_index(site_title=title, subtitle=subtitle, meta=meta)
+        body_parts.append("</div></section>")
+
+    body_html = "\n".join(body_parts)
+
+    index_html = render_index(site_title=title, subtitle=subtitle, meta=meta, nav_html=nav_html, body_html=body_html)
     _write_text(site_dir / "index.html", index_html)
     return site_dir / "index.html"
 

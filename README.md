@@ -68,7 +68,7 @@ python -m nostalgia_scroll --zip "/path/to/WhatsApp Export.zip"
 ```
 
 ## Notes
-- This tool reads the chat `.txt` inside the ZIP and ignores media files for now (it uses message timestamps and text).
+- This tool reads the chat `.txt` inside the ZIP, copies attached media into the generated site, and renders images inline.
 - If you have multiple ZIPs in `Source/`, it picks the most recently modified one. You can override with `--zip /path/to/export.zip`.
 - Output is always written to `output/site/`.
-- The generated site uses **infinite scroll** and month jump links; it loads month chunks via local script files in `output/site/months/`.
+- The generated site is a **single long page** (no lazy loading). Year/month links jump to anchors within the page.
