@@ -51,7 +51,9 @@ def main(argv: list[str] | None = None) -> int:
             output_dir.unlink()
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    media_zip_path: Path | None = None
     if args.zip is not None:
+        media_zip_path = args.zip
         zsrc: ZipChatSource = parse_ios_export_zip(args.zip)
     else:
         if source_dir.exists() and (source_dir / "_chat.txt").exists():
@@ -60,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             zsrc = parse_ios_export_dir(source_dir)
         else:
             zip_path = discover_ios_export_zip(source_dir)
+            media_zip_path = zip_path
             zsrc = parse_ios_export_zip(zip_path)
 
     messages = [m for m in zsrc.messages if (args.include_system or not m.system)]
@@ -69,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         title=args.title,
         subtitle=f"{Path(zsrc.chat_txt_path).name} • {len(messages):,} messages",
         media_source_dir=source_dir if source_dir.exists() and source_dir.is_dir() else None,
+        media_zip_path=media_zip_path,
     )
     print(f"Wrote {entry}")
     return 0

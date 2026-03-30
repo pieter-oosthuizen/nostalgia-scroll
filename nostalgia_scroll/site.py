@@ -5,6 +5,7 @@ import json
 import mimetypes
 import re
 import shutil
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -258,6 +259,7 @@ def build_site(
     title: str = "WhatsApp chat",
     subtitle: str = "Generated locally",
     media_source_dir: Path | None = None,
+    media_zip_path: Path | None = None,
 ) -> Path:
     site_dir = output_dir / "site"
     write_assets(site_dir)
@@ -309,16 +311,36 @@ def build_site(
         return "file"
 
     def copy_media(name: str) -> str | None:
-        if not media_source_dir:
-            return None
-        src = media_source_dir / name
-        if not src.exists() or not src.is_file():
-            return None
         dst = media_dir / name
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if not dst.exists() or dst.stat().st_size != src.stat().st_size:
-            shutil.copyfile(src, dst)
-        return f"media/{name}"
+
+        # 1) Extracted folder mode
+        if media_source_dir:
+            src = media_source_dir / name
+            if src.exists() and src.is_file():
+                if not dst.exists() or dst.stat().st_size != src.stat().st_size:
+                    shutil.copyfile(src, dst)
+                return f"media/{name}"
+
+        # 2) ZIP mode (search for a member with this basename)
+        if media_zip_path and media_zip_path.exists() and media_zip_path.is_file():
+            try:
+                with zipfile.ZipFile(media_zip_path, "r") as zf:
+                    target = None
+                    for member in zf.namelist():
+                        if Path(member).name == name:
+                            target = member
+                            break
+                    if target is None:
+                        return None
+                    data = zf.read(target)
+                    if not dst.exists() or dst.stat().st_size != len(data):
+                        dst.write_bytes(data)
+                    return f"media/{name}"
+            except zipfile.BadZipFile:
+                return None
+
+        return None
 
     # Build nav + full HTML body
     by_year: dict[int, list[MonthKey]] = {}
