@@ -115,7 +115,8 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
     loading: new Set(),
     monthOrder: [],
     nextIdx: 0,
-    swapped: false
+    swapped: false,
+    view: "standard"
   };
 
   const elSubtitle = document.getElementById("subtitle");
@@ -129,8 +130,12 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
   const elP0 = document.getElementById("p0Name");
   const elP1 = document.getElementById("p1Name");
   const btnSwitchSides = document.getElementById("switchSides");
+  const selView = document.getElementById("viewSelect");
   const elOverlay = document.getElementById("overlay");
   const elOverlayImg = document.getElementById("overlayImg");
+  const elStandardView = document.getElementById("standardView");
+  const elFrequencyView = document.getElementById("frequencyView");
+  const elFrequencyHost = document.getElementById("frequencyHost");
 
   const PALETTE = [
     ["Emerald", "#2b7"], ["Blue", "#48f"], ["Purple", "#a5f"], ["Orange", "#f84"], ["Red", "#f44"],
@@ -140,6 +145,8 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
   function setVar(name, value){ document.documentElement.style.setProperty(name, value); }
   function loadSwapSides(){ return localStorage.getItem("wa_swap_sides") === "1"; }
   function saveSwapSides(v){ localStorage.setItem("wa_swap_sides", v ? "1" : "0"); }
+  function loadView(){ return localStorage.getItem("wa_view") || "standard"; }
+  function saveView(v){ localStorage.setItem("wa_view", v); }
 
   function loadPrefs(){
     const a = localStorage.getItem("wa_color0");
@@ -341,6 +348,152 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
     renderMonth(ym, payload);
   };
 
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+  function quant25(x){ return Math.round(clamp01(x) * 4) / 4; }
+  function parseHex(hex){
+    const h = (hex || "").trim();
+    if (!h) return null;
+    if (h[0] === "#" && h.length === 4){
+      const r = parseInt(h[1] + h[1], 16);
+      const g = parseInt(h[2] + h[2], 16);
+      const b = parseInt(h[3] + h[3], 16);
+      return { r, g, b };
+    }
+    if (h[0] === "#" && h.length === 7){
+      const r = parseInt(h.slice(1,3), 16);
+      const g = parseInt(h.slice(3,5), 16);
+      const b = parseInt(h.slice(5,7), 16);
+      return { r, g, b };
+    }
+    return null;
+  }
+  function parseRgbCss(rgb){
+    const m = (rgb || "").match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+    if (!m) return null;
+    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+  }
+  function mixRgb(a, b, t){
+    const u = 1 - t;
+    return {
+      r: Math.round(a.r * u + b.r * t),
+      g: Math.round(a.g * u + b.g * t),
+      b: Math.round(a.b * u + b.b * t)
+    };
+  }
+  function rgbToCss(c){ return `rgb(${c.r}, ${c.g}, ${c.b})`; }
+
+  function renderFrequency(){
+    if (!elFrequencyHost || !state.meta) return;
+    if (elFrequencyHost.getAttribute("data-rendered") === "1") return;
+    elFrequencyHost.setAttribute("data-rendered", "1");
+
+    const meta = state.meta;
+    if (!meta.daily || !meta.daily_years || !meta.daily_years.length){
+      elFrequencyHost.textContent = "No daily stats available for this chat.";
+      return;
+    }
+
+    const bgCss = getComputedStyle(document.body).backgroundColor || "rgb(255,255,255)";
+    const bg = parseRgbCss(bgCss) || { r: 255, g: 255, b: 255 };
+    const c0 = parseHex(getComputedStyle(document.documentElement).getPropertyValue("--c0").trim()) || parseHex("#22bb77");
+    const c1 = parseHex(getComputedStyle(document.documentElement).getPropertyValue("--c1").trim()) || parseHex("#4488ff");
+    if (!c0 || !c1) return;
+
+    elFrequencyHost.innerHTML = "";
+
+    for (const year of meta.daily_years){
+      const yearDaily = meta.daily[String(year)] || {};
+
+      const sec = document.createElement("section");
+      sec.style.marginTop = "14px";
+
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.justifyContent = "space-between";
+      header.style.alignItems = "baseline";
+      header.style.gap = "12px";
+      header.style.margin = "4px 0 10px";
+
+      const left = document.createElement("div");
+      left.style.fontWeight = "700";
+      left.style.fontSize = "13px";
+      left.textContent = String(year);
+
+      header.appendChild(left);
+      sec.appendChild(header);
+
+      const grid = document.createElement("div");
+      grid.style.display = "grid";
+      grid.style.gridAutoFlow = "column";
+      grid.style.gridTemplateRows = "repeat(7, 12px)";
+      grid.style.gridAutoColumns = "12px";
+      grid.style.gap = "3px";
+
+      const start = new Date(year, 0, 1);
+      const end = new Date(year + 1, 0, 1);
+      const startDow = start.getDay();
+      for (let i = 0; i < startDow; i++){
+        const pad = document.createElement("div");
+        pad.style.width = "12px";
+        pad.style.height = "12px";
+        pad.style.opacity = "0";
+        grid.appendChild(pad);
+      }
+
+      for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)){
+        const ym = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const key = `${ym}-${mm}-${dd}`;
+
+        const pair = yearDaily[key] || [0, 0];
+        const n0 = pair[0] || 0;
+        const n1 = pair[1] || 0;
+        const total = n0 + n1;
+
+        const cell = document.createElement("div");
+        cell.style.width = "12px";
+        cell.style.height = "12px";
+        cell.style.borderRadius = "3px";
+        cell.style.border = "1px solid var(--stroke)";
+        cell.title = `${key}: ${total} messages (${n0}/${n1})`;
+
+        if (total <= 0){
+          cell.style.background = "transparent";
+          cell.style.opacity = "0.55";
+        } else {
+          const intensity = clamp01(Math.min(total, 50) / 50);
+          const ratio1 = quant25(n1 / total);
+          const base = mixRgb(c0, c1, ratio1);
+          const painted = mixRgb(bg, base, 0.15 + 0.85 * intensity);
+          cell.style.background = rgbToCss(painted);
+          cell.style.opacity = "1";
+        }
+        grid.appendChild(cell);
+      }
+
+      sec.appendChild(grid);
+      elFrequencyHost.appendChild(sec);
+    }
+  }
+
+  function applyView(v){
+    state.view = v || "standard";
+    if (!elStandardView || !elFrequencyView) return;
+    if (state.view === "frequency"){
+      elStandardView.style.display = "none";
+      elFrequencyView.style.display = "block";
+      if (btnSwitchSides) btnSwitchSides.style.display = "none";
+      if (elNav) elNav.style.display = "none";
+      renderFrequency();
+    } else {
+      elFrequencyView.style.display = "none";
+      elStandardView.style.display = "block";
+      if (btnSwitchSides) btnSwitchSides.style.display = "";
+      if (elNav) elNav.style.display = "";
+    }
+  }
+
   function openOverlay(src, alt){
     if (!elOverlay || !elOverlayImg) return;
     elOverlayImg.src = src;
@@ -392,6 +545,17 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
       });
     }
 
+    let view = loadView();
+    if (selView){
+      selView.value = view;
+      selView.addEventListener("change", () => {
+        view = selView.value;
+        saveView(view);
+        applyView(view);
+      });
+    }
+    applyView(view);
+
     function onColorChange(){
       const c0 = selC0.value;
       const c1 = selC1.value;
@@ -400,6 +564,11 @@ main{padding:14px 18px 40px;max-width:980px;margin:0 auto}
       if (swC0) swC0.style.background = c0;
       if (swC1) swC1.style.background = c1;
       savePrefs(c0, c1);
+
+      if (elFrequencyHost){
+        elFrequencyHost.removeAttribute("data-rendered");
+        if (state.view === "frequency") renderFrequency();
+      }
     }
     selC0.addEventListener("change", onColorChange);
     selC1.addEventListener("change", onColorChange);
@@ -440,6 +609,13 @@ def render_index(*, site_title: str, subtitle: str, meta: dict) -> str:
           <span id="subtitle">{_escape(subtitle)}</span>
         </header>
         <div class="section">
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:8px">
+            <div style="font-weight:600;color:var(--fg);margin-bottom:6px">View</div>
+            <select id="viewSelect" style="width:100%;border:1px solid var(--stroke);background:color-mix(in oklab, Canvas 92%, CanvasText 8%);color:var(--fg);border-radius:12px;padding:8px 10px">
+              <option value="standard">Standard Message View</option>
+              <option value="frequency">Message Frequency View</option>
+            </select>
+          </label>
           <button id="switchSides" type="button" class="pill" style="width:100%;text-align:center;margin-bottom:10px">Switch User Sides</button>
           <div class="settings">
             <label><span class="swatch" id="swatch0"></span><span id="p0Name">P0</span><select id="color0"></select></label>
@@ -449,14 +625,26 @@ def render_index(*, site_title: str, subtitle: str, meta: dict) -> str:
         <div class="section" id="navMonths"></div>
       </nav>
       <main>
-        <div class="topbar">
-          <div class="title">
-            <strong>Chat timeline</strong>
-            <span>Scroll to load more. Use the month list to jump.</span>
+        <div id="standardView">
+          <div class="topbar">
+            <div class="title">
+              <strong>Chat timeline</strong>
+              <span>Scroll to load more. Use the month list to jump.</span>
+            </div>
           </div>
+          <div class="timeline" id="timeline"></div>
+          <div id="sentinel" style="height: 1px;"></div>
         </div>
-        <div class="timeline" id="timeline"></div>
-        <div id="sentinel" style="height: 1px;"></div>
+        <div id="frequencyView" style="display:none">
+          <div class="topbar">
+            <div class="title">
+              <strong>Message frequency</strong>
+              <span>Each square is a day. Hover for details.</span>
+            </div>
+          </div>
+          <div id="frequencyHost"></div>
+          <div style="color:var(--muted);font-size:12px;margin-top:10px">Brightness ∝ messages/day (cap 50). Color = user balance (quantized to 25%).</div>
+        </div>
       </main>
     </div>
 
@@ -518,6 +706,31 @@ def build_site(
         "total_messages": len(messages),
     }
 
+    # Daily counts for Message Frequency View
+    daily: dict[str, dict[str, list[int]]] = {}
+    years: set[int] = set()
+    print("[whatsapp-viz] Computing daily message counts…", flush=True)
+    for m in messages:
+        if m.system:
+            continue
+        sender = m.sender or ""
+        p = 0
+        if participants and sender == participants[1]:
+            p = 1
+        elif participants and sender != participants[0]:
+            p = 1
+        day = _dt_local(m.ts_ms).strftime("%Y-%m-%d")
+        years.add(int(day[:4]))
+        yd = daily.setdefault(day[:4], {})
+        pair = yd.get(day)
+        if pair is None:
+            pair = [0, 0]
+            yd[day] = pair
+        pair[p] += 1
+
+    meta["daily"] = daily
+    meta["daily_years"] = sorted(years)
+
     media_dir = site_dir / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
     attach_re = re.compile(r"<attached:\s*([^>]+)>")
@@ -551,7 +764,9 @@ def build_site(
     # Write month chunks as JS files (so they can be loaded from file:// without fetch()).
     months_dir = site_dir / "months"
     months_dir.mkdir(parents=True, exist_ok=True)
-    for mk in month_keys:
+    total_months = len(month_keys)
+    for idx, mk in enumerate(month_keys, start=1):
+        print(f"[whatsapp-viz] Writing month {idx}/{total_months}: {mk.ym}", flush=True)
         out_msgs = []
         for m in buckets[mk]:
             sender = m.sender or ("System" if m.system else "Unknown")

@@ -36,6 +36,10 @@ def _escape(s: str) -> str:
     return html.escape(s, quote=False)
 
 
+def _date_key_local(ts_ms: int) -> str:
+    return _dt_local(ts_ms).strftime("%Y-%m-%d")
+
+
 def group_by_month(messages: list[Message]) -> dict[MonthKey, list[Message]]:
     buckets: dict[MonthKey, list[Message]] = {}
     for m in messages:
@@ -63,6 +67,12 @@ def write_assets(site_dir: Path) -> None:
 .bubble-p1 { background-color: color-mix(in oklab, var(--c1) 16%, white 84%); }
 .msg-row[data-side="left"] { align-self: flex-start; }
 .msg-row[data-side="right"] { align-self: flex-end; }
+.hidden { display: none !important; }
+.freqYear { margin-top: 14px; }
+.freqYearHeader { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 4px 0 10px; }
+.freqGrid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 12px); grid-auto-columns: 12px; gap: 3px; }
+.freqCell { width: 12px; height: 12px; border-radius: 3px; border: 1px solid color-mix(in oklab, currentColor 12%, transparent 88%); }
+.freqLegend { display:flex; align-items:center; gap:8px; color: color-mix(in oklab, currentColor 58%, transparent 42%); font-size: 12px; margin-top: 10px;}
 @media (prefers-color-scheme: dark) {
   .bubble-p0 { background-color: color-mix(in oklab, var(--c0) 22%, rgb(17 24 39) 78%); }
   .bubble-p1 { background-color: color-mix(in oklab, var(--c1) 22%, rgb(17 24 39) 78%); }
@@ -79,9 +89,14 @@ def write_assets(site_dir: Path) -> None:
   const swC1 = document.getElementById("swatch1");
   const elP0 = document.getElementById("p0Name");
   const elP1 = document.getElementById("p1Name");
+  const selView = document.getElementById("viewSelect");
   const btnSwitchSides = document.getElementById("switchSides");
+  const elNavMonths = document.getElementById("navMonths");
   const elOverlay = document.getElementById("overlay");
   const elOverlayImg = document.getElementById("overlayImg");
+  const elStandardView = document.getElementById("standardView");
+  const elFrequencyView = document.getElementById("frequencyView");
+  const elFrequencyHost = document.getElementById("frequencyHost");
 
   const PALETTE = [
     ["Emerald", "#2b7"], ["Blue", "#48f"], ["Purple", "#a5f"], ["Orange", "#f84"], ["Red", "#f44"],
@@ -91,6 +106,8 @@ def write_assets(site_dir: Path) -> None:
   function setVar(name, value){ document.documentElement.style.setProperty(name, value); }
   function loadSwapSides(){ return localStorage.getItem("wa_swap_sides") === "1"; }
   function saveSwapSides(v){ localStorage.setItem("wa_swap_sides", v ? "1" : "0"); }
+  function loadView(){ return localStorage.getItem("wa_view") || "standard"; }
+  function saveView(v){ localStorage.setItem("wa_view", v); }
   function loadPrefs(){
     const a = localStorage.getItem("wa_color0");
     const b = localStorage.getItem("wa_color1");
@@ -130,6 +147,146 @@ def write_assets(site_dir: Path) -> None:
     });
   }
 
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+  function quant25(x){ return Math.round(clamp01(x) * 4) / 4; }
+  function parseHex(hex){
+    const h = (hex || "").trim();
+    if (!h) return null;
+    // Support #rgb or #rrggbb
+    if (h[0] === "#" && h.length === 4){
+      const r = parseInt(h[1] + h[1], 16);
+      const g = parseInt(h[2] + h[2], 16);
+      const b = parseInt(h[3] + h[3], 16);
+      return { r, g, b };
+    }
+    if (h[0] === "#" && h.length === 7){
+      const r = parseInt(h.slice(1,3), 16);
+      const g = parseInt(h.slice(3,5), 16);
+      const b = parseInt(h.slice(5,7), 16);
+      return { r, g, b };
+    }
+    return null;
+  }
+  function parseRgbCss(rgb){
+    const m = (rgb || "").match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+    if (!m) return null;
+    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+  }
+  function mixRgb(a, b, t){
+    const u = 1 - t;
+    return {
+      r: Math.round(a.r * u + b.r * t),
+      g: Math.round(a.g * u + b.g * t),
+      b: Math.round(a.b * u + b.b * t)
+    };
+  }
+  function rgbToCss(c){ return `rgb(${c.r}, ${c.g}, ${c.b})`; }
+
+  function renderFrequency(meta){
+    if (!elFrequencyHost) return;
+    if (!meta.daily || !meta.daily_years || !meta.daily_years.length) {
+      elFrequencyHost.textContent = "No daily stats available for this chat.";
+      return;
+    }
+    // Idempotent render
+    if (elFrequencyHost.getAttribute("data-rendered") === "1") return;
+    elFrequencyHost.setAttribute("data-rendered", "1");
+
+    const bgCss = getComputedStyle(document.body).backgroundColor || "rgb(255,255,255)";
+    const bg = parseRgbCss(bgCss) || { r: 255, g: 255, b: 255 };
+    const c0 = parseHex(getComputedStyle(document.documentElement).getPropertyValue("--c0").trim()) || parseHex("#22bb77");
+    const c1 = parseHex(getComputedStyle(document.documentElement).getPropertyValue("--c1").trim()) || parseHex("#4488ff");
+    if (!c0 || !c1) return;
+
+    const wrap = document.createElement("div");
+    wrap.className = "flex flex-col gap-6";
+
+    for (const year of meta.daily_years){
+      const yearDaily = meta.daily[String(year)] || {};
+
+      const sec = document.createElement("section");
+      sec.className = "freqYear";
+
+      const header = document.createElement("div");
+      header.className = "freqYearHeader";
+      const left = document.createElement("div");
+      left.className = "text-sm font-semibold";
+      left.textContent = String(year);
+      header.appendChild(left);
+      sec.appendChild(header);
+
+      const grid = document.createElement("div");
+      grid.className = "freqGrid";
+
+      const start = new Date(year, 0, 1);
+      const end = new Date(year + 1, 0, 1);
+      const startDow = start.getDay(); // 0=Sun
+      // pad to Sunday to align columns like GitHub
+      for (let i = 0; i < startDow; i++){
+        const pad = document.createElement("div");
+        pad.className = "freqCell";
+        pad.style.opacity = "0";
+        grid.appendChild(pad);
+      }
+
+      for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)){
+        const ym = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const key = `${ym}-${mm}-${dd}`;
+
+        const pair = yearDaily[key] || [0, 0];
+        const n0 = pair[0] || 0;
+        const n1 = pair[1] || 0;
+        const total = n0 + n1;
+
+        const cell = document.createElement("div");
+        cell.className = "freqCell";
+        cell.title = `${key}: ${total} messages (${n0}/${n1})`;
+
+        if (total <= 0){
+          // empty day: subtle outline
+          cell.style.background = "transparent";
+          cell.style.opacity = "0.55";
+        } else {
+          const intensity = clamp01(Math.min(total, 50) / 50);
+          const ratio1 = quant25(n1 / total);
+          const base = mixRgb(c0, c1, ratio1);
+          const painted = mixRgb(bg, base, 0.15 + 0.85 * intensity);
+          cell.style.background = rgbToCss(painted);
+          cell.style.opacity = "1";
+        }
+        grid.appendChild(cell);
+      }
+
+      sec.appendChild(grid);
+      wrap.appendChild(sec);
+    }
+
+    const legend = document.createElement("div");
+    legend.className = "freqLegend";
+    legend.textContent = "Brightness ∝ messages/day (cap 50). Color = user balance (quantized to 25%).";
+    elFrequencyHost.appendChild(wrap);
+    elFrequencyHost.appendChild(legend);
+  }
+
+  function applyView(v, meta){
+    const view = v || "standard";
+    if (!elStandardView || !elFrequencyView) return;
+    if (view === "frequency"){
+      elStandardView.classList.add("hidden");
+      elFrequencyView.classList.remove("hidden");
+      if (btnSwitchSides) btnSwitchSides.classList.add("hidden");
+      if (elNavMonths) elNavMonths.classList.add("hidden");
+      renderFrequency(meta);
+    } else {
+      elFrequencyView.classList.add("hidden");
+      elStandardView.classList.remove("hidden");
+      if (btnSwitchSides) btnSwitchSides.classList.remove("hidden");
+      if (elNavMonths) elNavMonths.classList.remove("hidden");
+    }
+  }
+
   function boot(){
     const metaRaw = (document.getElementById("meta")?.textContent || "").trim();
     const meta = metaRaw ? JSON.parse(metaRaw) : null;
@@ -157,6 +314,18 @@ def write_assets(site_dir: Path) -> None:
       });
     }
 
+    // View selector
+    let view = loadView();
+    if (selView){
+      selView.value = view;
+      selView.addEventListener("change", () => {
+        view = selView.value;
+        saveView(view);
+        applyView(view, meta);
+      });
+    }
+    applyView(view, meta);
+
     function onColorChange(){
       const c0 = selC0.value;
       const c1 = selC1.value;
@@ -165,6 +334,14 @@ def write_assets(site_dir: Path) -> None:
       if (swC0) swC0.style.background = c0;
       if (swC1) swC1.style.background = c1;
       savePrefs(c0, c1);
+
+      // Repaint frequency grid on theme changes (keep it simple: reset and rerender on next view open)
+      if (elFrequencyHost){
+        elFrequencyHost.removeAttribute("data-rendered");
+        elFrequencyHost.innerHTML = "";
+        const curView = loadView();
+        if (curView === "frequency") renderFrequency(meta);
+      }
     }
     selC0.addEventListener("change", onColorChange);
     selC1.addEventListener("change", onColorChange);
@@ -207,6 +384,13 @@ def render_index(*, site_title: str, subtitle: str, meta: dict, nav_html: str, b
           <div id="subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{_escape(subtitle)}</div>
         </header>
         <div class="px-3 py-3">
+          <label class="block text-xs text-slate-500 dark:text-slate-400 mb-2">
+            <div class="font-medium mb-1">View</div>
+            <select id="viewSelect" class="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/40 px-3 py-2">
+              <option value="standard">Standard Message View</option>
+              <option value="frequency">Message Frequency View</option>
+            </select>
+          </label>
           <button id="switchSides" type="button" class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/40 px-3 py-2 text-xs font-medium hover:bg-white dark:hover:bg-slate-950/60">
             Switch User Sides
           </button>
@@ -224,16 +408,27 @@ def render_index(*, site_title: str, subtitle: str, meta: dict, nav_html: str, b
             </label>
           </div>
         </div>
-        <div class="px-3 pb-5 text-sm">{nav_html}</div>
+        <div id="navMonths" class="px-3 pb-5 text-sm">{nav_html}</div>
       </nav>
       <main class="px-4 py-4 md:px-6 md:py-6 max-w-5xl mx-auto w-full">
-        <div class="flex items-center justify-between gap-3 mb-4">
-          <div>
-            <div class="text-sm font-semibold">Chat timeline</div>
-            <div class="text-xs text-slate-500 dark:text-slate-400">Use the month list to jump.</div>
+        <div id="standardView">
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <div class="text-sm font-semibold">Chat timeline</div>
+              <div class="text-xs text-slate-500 dark:text-slate-400">Use the month list to jump.</div>
+            </div>
           </div>
+          <div class="flex flex-col gap-6">{body_html}</div>
         </div>
-        <div class="flex flex-col gap-6">{body_html}</div>
+        <div id="frequencyView" class="hidden">
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <div class="text-sm font-semibold">Message frequency</div>
+              <div class="text-xs text-slate-500 dark:text-slate-400">Each square = 1 day. Hover for details.</div>
+            </div>
+          </div>
+          <div id="frequencyHost"></div>
+        </div>
       </main>
     </div>
 
@@ -288,7 +483,35 @@ def build_site(
         participants = (participants + seen)[:2]
 
     months = [mk.ym for mk in month_keys]
-    meta = {"participants": participants, "months": months, "total_messages": len(messages)}
+    # Daily counts for Message Frequency View
+    daily: dict[str, dict[str, list[int]]] = {}
+    years: set[int] = set()
+    print(f"[nostalgia-scroll] Computing daily message counts…", flush=True)
+    for m in messages:
+        if m.system:
+            continue
+        sender = m.sender or ""
+        p = 0
+        if participants and sender == participants[1]:
+            p = 1
+        elif participants and sender != participants[0]:
+            p = 1
+        day = _date_key_local(m.ts_ms)
+        years.add(int(day[:4]))
+        yd = daily.setdefault(day[:4], {})
+        pair = yd.get(day)
+        if pair is None:
+            pair = [0, 0]
+            yd[day] = pair
+        pair[p] += 1
+
+    meta = {
+        "participants": participants,
+        "months": months,
+        "total_messages": len(messages),
+        "daily": daily,
+        "daily_years": sorted(years),
+    }
 
     media_dir = site_dir / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
@@ -355,7 +578,9 @@ def build_site(
     nav_html = "\n".join(nav_parts)
 
     body_parts: list[str] = []
-    for mk in month_keys:
+    total_months = len(month_keys)
+    for idx, mk in enumerate(month_keys, start=1):
+        print(f"[nostalgia-scroll] Rendering month {idx}/{total_months}: {mk.ym}", flush=True)
         month_id = f"m-{mk.ym.replace('-', '')}"
         month_msgs = buckets[mk]
         body_parts.append(f'<section class="scroll-mt-3" id="{month_id}">')
@@ -423,6 +648,7 @@ def build_site(
     out_css = site_dir / "assets" / "tailwind.css"
     index_path = site_dir / "index.html"
     try:
+        print("[nostalgia-scroll] Building CSS (Tailwind)…", flush=True)
         subprocess.run(
             [
                 "npx",
@@ -440,6 +666,7 @@ def build_site(
             stderr=subprocess.STDOUT,
             text=True,
         )
+        print("[nostalgia-scroll] CSS build complete.", flush=True)
     except FileNotFoundError as e:
         raise RuntimeError(
             "Tailwind build requires Node.js + npm (for `npx tailwindcss`). "
