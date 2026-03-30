@@ -1,0 +1,18 @@
+[project]
+name = "nostalgia-scroll"
+version = "0.1.0"
+description = "Generate an offline, scrollable website from a WhatsApp chat export."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+nostalgia-scroll = "nostalgia_scroll.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nostalgia_scroll*", "whatsapp_viz*"]
+
